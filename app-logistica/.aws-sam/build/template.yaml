@@ -1,0 +1,90 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: "Projeto de log\xEDstica serverless para encontrar o centro de distribui\xE7\
+  \xE3o mais pr\xF3ximo.\n"
+Globals:
+  Function:
+    Timeout: 10
+    Runtime: python3.11
+    Handler: app.lambda_handler
+    Environment:
+      Variables:
+        PEDIDOS_TABLE_NAME:
+          Ref: PedidosRealizadosTable
+        GALPOES_TABLE_NAME:
+          Ref: CadastraGalpoesLocTable
+        ALOCACAO_QUEUE_URL:
+          Ref: AlocacaoQueue
+Resources:
+  LogisticaApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+  PedidosRealizadosTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: pedidoId
+        Type: String
+  CadastraGalpoesLocTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: galpaoId
+        Type: String
+  ProdutoOrigemLocTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: produtoId
+        Type: String
+  AlocacaoQueue:
+    Type: AWS::SQS::Queue
+  FechaPedidoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: FechaPedidoFunction
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: PedidosRealizadosTable
+      - SQSSendMessagePolicy:
+          QueueName:
+            Fn::GetAtt:
+            - AlocacaoQueue
+            - QueueName
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /pedido
+            Method: post
+            RestApiId:
+              Ref: LogisticaApi
+    Metadata:
+      SamResourceId: FechaPedidoFunction
+  CalculaDistanciaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: CalculaDistanciaFunction
+      Policies:
+      - DynamoDBReadPolicy:
+          TableName:
+            Ref: CadastraGalpoesLocTable
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: PedidosRealizadosTable
+      - DynamoDBReadPolicy:
+          TableName:
+            Ref: ProdutoOrigemLocTable
+      Events:
+        SqsEvent:
+          Type: SQS
+          Properties:
+            Queue:
+              Fn::GetAtt:
+              - AlocacaoQueue
+              - Arn
+            BatchSize: 1
+    Metadata:
+      SamResourceId: CalculaDistanciaFunction
