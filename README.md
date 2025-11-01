@@ -1,95 +1,176 @@
 # API de Logística Serverless na AWS
 
-![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg?logo=python&logoColor=white)
-![AWS SAM](https://img.shields.io/badge/AWS-SAM-orange.svg?logo=amazon-aws&logoColor=white)
-![AWS Lambda](https://img.shields.io/badge/AWS-Lambda-orange.svg?logo=amazon-aws&logoColor=white)
-![Amazon SQS](https://img.shields.io/badge/Amazon-SQS-red.svg?logo=amazon-aws&logoColor=white)
-![Amazon DynamoDB](https://img.shields.io/badge/Amazon-DynamoDB-blue.svg?logo=amazon-aws&logoColor=white)
+![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg?logo=python\&logoColor=white)
+![AWS SAM](https://img.shields.io/badge/AWS-SAM-orange.svg?logo=amazon-aws\&logoColor=white)
+![AWS Lambda](https://img.shields.io/badge/AWS-Lambda-orange.svg?logo=amazon-aws\&logoColor=white)
+![Amazon SQS](https://img.shields.io/badge/Amazon-SQS-red.svg?logo=amazon-aws\&logoColor=white)
+![Amazon DynamoDB](https://img.shields.io/badge/Amazon-DynamoDB-blue.svg?logo=amazon-aws\&logoColor=white)
 ![Licença](https://img.shields.io/badge/Licença-MIT-green.svg)
 
-Este projeto implementa uma API serverless para um sistema de logística. A API recebe pedidos contendo a geolocalização de um cliente e, de forma assíncrona, determina o centro de distribuição (galpão) mais próximo para otimizar a entrega.
+## 🎯 Objetivo do Projeto
 
-Este projeto foi construído utilizando o **AWS Serverless Application Model (SAM)**.
+Este projeto implementa uma API serverless de alta disponibilidade para um sistema de logística. O objetivo é receber pedidos e, de forma assíncrona, processar a geolocalização do cliente para alocar o centro de distribuição (galpão) mais próximo, otimizando assim o tempo de entrega e garantindo que o sistema seja escalável e resiliente.
+
+A aplicação é construída inteiramente com serviços gerenciados da AWS, seguindo os padrões de arquitetura serverless e Infraestrutura como Código (IaC) usando o **AWS Serverless Application Model (SAM)**.
 
 ---
 
 ## 🏛️ Arquitetura
 
-O fluxo da aplicação segue a arquitetura abaixo:
+O fluxo da aplicação é totalmente desacoplado para garantir resiliência e escalabilidade:
 
-1.  Um usuário (via `curl` ou front-end) envia um pedido `POST` para o **API Gateway**.
-2.  O API Gateway dispara a Lambda **`FechaPedidoFunction`**.
-3.  Esta Lambda valida os dados, salva o pedido com status `PENDENTE` no **DynamoDB (`PedidosRealizadosTable`)** e envia uma mensagem para a fila **SQS (`AlocacaoQueue`)**.
-4.  A fila SQS serve como um buffer e invoca a Lambda **`CalculaDistanciaFunction`**.
-5.  Esta Lambda lê a localização de todos os galpões cadastrados no **DynamoDB (`CadastraGalpoesLocTable`)**, calcula a distância euclidiana para encontrar o mais próximo e, por fim, atualiza o pedido na `PedidosRealizadosTable` com o `galpaoId` alocado e o status `ALOCADO`.
+1. Um usuário envia um pedido `POST` para o **Amazon API Gateway**.
+2. O API Gateway invoca a função Lambda **`FechaPedidoFunction`**.
+3. Esta Lambda valida os dados recebidos, gera um `pedidoId` único e salva o pedido com status `PENDENTE_ALOCACAO` na tabela **DynamoDB (`PedidosRealizadosTable`)**.
+4. A Lambda envia uma mensagem com os dados do pedido para uma fila **Amazon SQS (`AlocacaoQueue`)**.
+5. A fila SQS invoca de forma assíncrona a função Lambda **`CalculaDistanciaFunction`**.
+6. A segunda Lambda lê a localização de todos os galpões cadastrados na tabela **DynamoDB (`CadastraGalpoesLocTable`)**, calcula a distância euclidiana e atualiza o item com o `galpaoId` e status `ALOCADO`.
 
-![Diagrama da Arquitetura](docs/arquitetura.jpg)
-*(Nota: Você precisará adicionar a imagem da arquitetura em uma pasta `docs`)*
+![Diagrama da Arquitetura](docs/arquitetura.png)
+
+*(Crie a pasta `docs` e adicione a imagem `arquitetura.png`)*
 
 ---
 
 ## 💻 Tecnologias Utilizadas
 
-* **AWS SAM (Serverless Application Model):** Framework para definição da infraestrutura como código (IaC).
-* **Amazon API Gateway:** Criação do endpoint REST para receber os pedidos.
-* **AWS Lambda:** Execução da lógica de negócio em Python sem gerenciamento de servidores.
-* **Amazon SQS (Simple Queue Service):** Desacoplamento de serviços e processamento assíncrono de pedidos.
-* **Amazon DynamoDB:** Banco de dados NoSQL para persistência dos pedidos e galpões.
-* **Python 3.11:** Linguagem de programação para as funções Lambda.
+* **IaC:** AWS SAM
+* **Serverless:** AWS Lambda
+* **API:** Amazon API Gateway
+* **Banco de Dados:** Amazon DynamoDB
+* **Mensageria:** Amazon SQS
+* **Linguagem:** Python 3.11
+* **Logs e Monitoramento:** Amazon CloudWatch
 
 ---
 
-## 🚀 Começando
+## 🗂️ Estrutura do Projeto
 
-Siga os passos abaixo para implantar e executar esta aplicação em sua própria conta AWS.
+```
+.
+├── .gitignore
+├── README.md
+├── calcula_distancia/
+│   ├── app.py
+│   └── requirements.txt
+├── fecha_pedido/
+│   ├── app.py
+│   └── requirements.txt
+└── template.yaml
+```
+
+---
+
+## 🔧 Configuração e Variáveis de Ambiente
+
+Variáveis definidas no `template.yaml` via `!Ref` e `!GetAtt`.
+
+```yaml
+globals:
+  Function:
+    Environment:
+      Variables:
+        PEDIDOS_TABLE_NAME: !Ref PedidosRealizadosTable
+        GALPOES_TABLE_NAME: !Ref CadastraGalpoesLocTable
+        ALOCACAO_QUEUE_URL: !Ref AlocacaoQueue
+```
+
+---
+
+## 🚀 Guia de Deploy
 
 ### Pré-requisitos
 
-* Conta na AWS com credenciais configuradas (AWS CLI)
-* [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html) instalado
-* [Python 3.11](https://www.python.org/downloads/) instalado
-* [Docker](https://www.docker.com/products/docker-desktop/) instalado e em execução
+* Conta AWS
+* AWS CLI configurado
+* AWS SAM CLI
+* Python 3.11
+* Docker
 
-### Instalação e Deploy
+### Passos
 
-1.  **Clone o repositório:**
-    ```bash
-    git clone [https://github.com/SEU-USUARIO/SEU-REPOSITORIO.git](https://github.com/SEU-USUARIO/SEU-REPOSITORIO.git)
-    cd SEU-REPOSITORIO
-    ```
+```bash
+git clone https://github.com/SEU-USUARIO/SEU-REPOSITORIO.git
+cd SEU-REPOSITORIO
+sam build
+sam deploy --guided
+```
 
-2.  **Construa o projeto com SAM:**
-    ```bash
-    sam build
-    ```
+Configurações recomendadas:
 
-3.  **Implante o projeto na AWS:**
-    O SAM fará perguntas sobre o nome da stack e as permissões IAM.
-    ```bash
-    sam deploy --guided
-    ```
-    * **Stack Name:** `app-logistica` (ou o nome que preferir)
-    * Responda `Y` (sim) para as perguntas sobre criação de roles IAM e confirmação de deploy.
+* Stack Name: `app-logistica`
+* Region: `us-east-1`
+* Allow IAM: Yes
 
 ---
 
 ## 🧪 Testando a Aplicação
 
-Após o deploy, a API estará no ar, mas a tabela de galpões estará vazia.
+### 1. Inserir galpões
 
-### 1. Cadastre os Galpões de Teste
+**Galpão Vitória:**
 
-Acesse o **Console da AWS** -> **DynamoDB** -> **Tabelas** e abra a sua tabela `app-logistica-CadastraGalpoesLocTable-XXXXX`.
-
-Crie dois itens de teste (você pode usar a visualização de Formulário ou JSON):
-
-**Galpão 1 (Vitória):**
 ```json
 {
   "galpaoId": "g-vitoria",
-  "localizacao": {
-    "x": 10,
-    "y": 15
-  },
+  "localizacao": { "x": 10, "y": 15 },
   "nome": "Galpão de Vitória"
 }
+```
+
+**Galpão Serra:**
+
+```json
+{
+  "galpaoId": "g-serra",
+  "localizacao": { "x": 80, "y": 90 },
+  "nome": "Galpão da Serra"
+}
+```
+
+### 2. Criar `payload.json`
+
+```json
+{
+  "produtoId": "prod-456",
+  "clienteLoc": { "x": 12, "y": 18 }
+}
+```
+
+### 3. Enviar requisição
+
+```bash
+curl -X POST "https://SUA-URL.execute-api.REGION.amazonaws.com/Prod/pedido" \
+-H "Content-Type: application/json" \
+-d "@payload.json"
+```
+
+### Resposta esperada
+
+```json
+{"message": "Pedido recebido com sucesso!", "pedidoId": "..."}
+```
+
+---
+
+## 🌟 Melhorias Futuras
+
+* Autenticação (Cognito/API Keys)
+* Geolocalização otimizada (Geohash/Amazon Location Service)
+* Validação de entrada via API Gateway
+* Pipeline CI/CD
+* DLQ para SQS
+
+---
+
+## 🧹 Limpeza dos Recursos
+
+```bash
+sam delete --stack-name app-logistica
+```
+
+---
+
+## 📄 Licença
+
+Projeto licenciado sob MIT.
