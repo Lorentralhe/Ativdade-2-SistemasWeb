@@ -26,9 +26,7 @@ O fluxo da aplicação é totalmente desacoplado para garantir resiliência e es
 5. A fila SQS invoca de forma assíncrona a função Lambda **`CalculaDistanciaFunction`**.
 6. A segunda Lambda lê a localização de todos os galpões cadastrados na tabela **DynamoDB (`CadastraGalpoesLocTable`)**, calcula a distância euclidiana e atualiza o item com o `galpaoId` e status `ALOCADO`.
 
-![Diagrama da Arquitetura](docs/arquitetura.png)
-
-*(Crie a pasta `docs` e adicione a imagem `arquitetura.png`)*
+![Diagrama da Arquitetura](docs/arquitetura.jpg)
 
 ---
 
