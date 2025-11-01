@@ -1,0 +1,16 @@
+# Arquivos de build do AWS SAM
+.aws-sam/
+samconfig.toml
+
+# Arquivos de sistema (Mac/Windows)
+.DS_Store
+Thumbs.db
+
+# Arquivos do Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Arquivos de teste local
+payload.json
