@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Projeto de logística serverless para encontrar o centro de distribuição mais próximo.
+
+Globals:
+  Function:
+    Timeout: 10
+    Runtime: python3.11
+    Handler: app.lambda_handler
+    Environment:
+      Variables:
+        PEDIDOS_TABLE_NAME: !Ref PedidosRealizadosTable
+        GALPOES_TABLE_NAME: !Ref CadastraGalpoesLocTable
+        ALOCACAO_QUEUE_URL: !Ref AlocacaoQueue
+
+Resources:
+  # 1. API Gateway para receber o pedido
+  LogisticaApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+
+  # 2. Tabela DynamoDB: Pedidos Realizados
+  PedidosRealizadosTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: pedidoId
+        Type: String
+
+  # 3. Tabela DynamoDB: Cadastro de Galpões
+  CadastraGalpoesLocTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: galpaoId
+        Type: String
+
+  # 4. Tabela DynamoDB: Produto Origem (Conforme diagrama)
+  #    Nota: A lógica principal (mais próximo do CLIENTE) não usa esta tabela.
+  #    Estou incluindo-a para seguir o diagrama.
+  ProdutoOrigemLocTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: produtoId
+        Type: String
+
+  # 5. Fila SQS: Fila de Alocação
+  AlocacaoQueue:
+    Type: AWS::SQS::Queue
+
+  # 6. Lambda: Fecha Pedido (Conectada à API e escreve no Dynamo/SQS)
+  FechaPedidoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: fecha_pedido/
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PedidosRealizadosTable
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt AlocacaoQueue.QueueName
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /pedido
+            Method: post
+            RestApiId: !Ref LogisticaApi
+
+  # 7. Lambda: Calcula Distância (Conectada à SQS e lê do Dynamo)
+  CalculaDistanciaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: calcula_distancia/
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref CadastraGalpoesLocTable
+        - DynamoDBCrudPolicy: # Permissão para atualizar o pedido com o galpão
+            TableName: !Ref PedidosRealizadosTable
+        - DynamoDBReadPolicy: # Permissão de leitura conforme diagrama
+            TableName: !Ref ProdutoOrigemLocTable
+      Events:
+        SqsEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt AlocacaoQueue.Arn
+            BatchSize: 1
